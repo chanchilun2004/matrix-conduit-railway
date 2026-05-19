@@ -1,9 +1,11 @@
 #!/bin/sh
 set -e
 
-/bin/mkdir -p /var/lib/matrix-conduit
+DATA=/data
+mkdir -p "$DATA/media_store"
 
-cat > /var/lib/matrix-conduit/meta-registration.yaml << YAML
+# Write appservice registration
+cat > "$DATA/meta-registration.yaml" << YAML
 id: meta
 url: ${MAUTRIX_PUBLIC_URL}
 as_token: ${MAUTRIX_AS_TOKEN}
@@ -18,30 +20,116 @@ namespaces:
   rooms: []
 YAML
 
-echo "[entrypoint] Registration written:"
-/bin/cat /var/lib/matrix-conduit/meta-registration.yaml
+echo "[entrypoint] Registration written"
 
-cat > /var/lib/matrix-conduit/conduit.toml << TOML
-[global]
-server_name = "${CONDUIT_SERVER_NAME}"
-database_backend = "${CONDUIT_DATABASE_BACKEND:-rocksdb}"
-database_path = "${CONDUIT_DATABASE_PATH:-/var/lib/matrix-conduit/}"
-address = "${CONDUIT_ADDRESS:-0.0.0.0}"
-port = ${CONDUIT_PORT:-6167}
-max_request_size = ${CONDUIT_MAX_REQUEST_SIZE:-20000000}
-max_concurrent_requests = ${CONDUIT_MAX_CONCURRENT_REQUESTS:-100}
-allow_registration = ${CONDUIT_ALLOW_REGISTRATION:-true}
-allow_federation = ${CONDUIT_ALLOW_FEDERATION:-true}
-allow_check_for_updates = ${CONDUIT_ALLOW_CHECK_FOR_UPDATES:-false}
-trusted_servers = ${CONDUIT_TRUSTED_SERVERS:-["matrix.org"]}
-appservice_config_files = ["/var/lib/matrix-conduit/meta-registration.yaml"]
-TOML
+# Generate homeserver.yaml and secrets using Python (handles DB URL parsing safely)
+python3 << 'PYEOF'
+import os, secrets, urllib.parse
 
-echo "[entrypoint] conduit.toml written:"
-/bin/cat /var/lib/matrix-conduit/conduit.toml
+db_url = os.environ['DATABASE_URL']
+u = urllib.parse.urlparse(db_url)
 
-unset CONDUIT_CONFIG
-export CONDUIT_CONFIG=/var/lib/matrix-conduit/conduit.toml
-export CONDUWUIT_CONFIG=/var/lib/matrix-conduit/conduit.toml
-echo "[entrypoint] Starting conduwuit (CONDUWUIT_CONFIG=${CONDUWUIT_CONFIG})..."
-exec /bin/conduwuit "$@"
+server_name = os.environ['CONDUIT_SERVER_NAME']
+
+# Load or generate stable secrets
+secrets_file = '/data/.secrets'
+config_secrets = {}
+if os.path.exists(secrets_file):
+    with open(secrets_file) as f:
+        for line in f:
+            k, _, v = line.strip().partition('=')
+            config_secrets[k] = v
+
+changed = False
+for key in ('MACAROON', 'REG_SECRET', 'FORM_SECRET'):
+    if key not in config_secrets:
+        config_secrets[key] = secrets.token_hex(32)
+        changed = True
+
+if changed:
+    with open(secrets_file, 'w') as f:
+        for k, v in config_secrets.items():
+            f.write(f'{k}={v}\n')
+
+log_config = """\
+version: 1
+formatters:
+  precise:
+    format: '%(asctime)s - %(name)s - %(lineno)d - %(levelname)s - %(request)s - %(message)s'
+handlers:
+  console:
+    class: logging.StreamHandler
+    formatter: precise
+loggers:
+  synapse.storage.SQL:
+    level: WARNING
+root:
+  level: INFO
+  handlers: [console]
+disable_existing_loggers: false
+"""
+with open('/data/log.config', 'w') as f:
+    f.write(log_config)
+
+homeserver_yaml = f"""\
+server_name: {server_name!r}
+pid_file: /data/homeserver.pid
+
+listeners:
+  - port: 6167
+    tls: false
+    type: http
+    x_forwarded: true
+    bind_addresses: ['0.0.0.0']
+    resources:
+      - names: [client, federation]
+        compress: false
+
+database:
+  name: psycopg2
+  args:
+    user: {u.username!r}
+    password: {u.password!r}
+    database: {u.path.lstrip('/')!r}
+    host: {u.hostname!r}
+    port: {u.port or 5432}
+    cp_min: 5
+    cp_max: 10
+
+log_config: /data/log.config
+media_store_path: /data/media_store
+registration_shared_secret: {config_secrets['REG_SECRET']!r}
+report_stats: false
+macaroon_secret_key: {config_secrets['MACAROON']!r}
+form_secret: {config_secrets['FORM_SECRET']!r}
+signing_key_path: /data/{server_name}.signing.key
+
+trusted_key_servers:
+  - server_name: "matrix.org"
+suppress_key_server_warning: true
+
+app_service_config_files:
+  - /data/meta-registration.yaml
+
+allow_registration: true
+enable_registration_without_verification: true
+"""
+
+with open('/data/homeserver.yaml', 'w') as f:
+    f.write(homeserver_yaml)
+
+print('[entrypoint] homeserver.yaml written')
+PYEOF
+
+# Generate signing key on first boot
+SIGNING_KEY="/data/${CONDUIT_SERVER_NAME}.signing.key"
+if [ ! -f "$SIGNING_KEY" ]; then
+    echo "[entrypoint] Generating signing key..."
+    python3 -m synapse.app.homeserver \
+        --config-path "$DATA/homeserver.yaml" \
+        --generate-keys
+fi
+
+echo "[entrypoint] Starting Synapse on port 6167..."
+exec python3 -m synapse.app.homeserver \
+    --config-path "/data/homeserver.yaml"
