@@ -22,12 +22,9 @@ YAML
 
 echo "[entrypoint] Registration written"
 
-# Generate homeserver.yaml and secrets using Python (handles DB URL parsing safely)
+# Generate homeserver.yaml using Python
 python3 << 'PYEOF'
 import os, secrets, urllib.parse
-
-db_url = os.environ['DATABASE_URL']
-u = urllib.parse.urlparse(db_url)
 
 server_name = os.environ['CONDUIT_SERVER_NAME']
 
@@ -50,6 +47,32 @@ if changed:
     with open(secrets_file, 'w') as f:
         for k, v in config_secrets.items():
             f.write(f'{k}={v}\n')
+
+# Database config: PostgreSQL if DATABASE_URL is set, else SQLite
+db_url = os.environ.get('DATABASE_URL', '')
+if db_url:
+    u = urllib.parse.urlparse(db_url)
+    db_config = f"""\
+database:
+  name: psycopg2
+  args:
+    user: {u.username!r}
+    password: {u.password!r}
+    database: {u.path.lstrip('/') !r}
+    host: {u.hostname!r}
+    port: {u.port or 5432}
+    cp_min: 5
+    cp_max: 10
+"""
+else:
+    db_config = """\
+database:
+  name: sqlite3
+  args:
+    database: /data/homeserver.db
+    cp_min: 1
+    cp_max: 1
+"""
 
 log_config = """\
 version: 1
@@ -85,17 +108,7 @@ listeners:
       - names: [client, federation]
         compress: false
 
-database:
-  name: psycopg2
-  args:
-    user: {u.username!r}
-    password: {u.password!r}
-    database: {u.path.lstrip('/')!r}
-    host: {u.hostname!r}
-    port: {u.port or 5432}
-    cp_min: 5
-    cp_max: 10
-
+{db_config}
 log_config: /data/log.config
 media_store_path: /data/media_store
 registration_shared_secret: {config_secrets['REG_SECRET']!r}
@@ -118,7 +131,7 @@ enable_registration_without_verification: true
 with open('/data/homeserver.yaml', 'w') as f:
     f.write(homeserver_yaml)
 
-print('[entrypoint] homeserver.yaml written')
+print('[entrypoint] homeserver.yaml written (db=' + ('postgres' if db_url else 'sqlite') + ')')
 PYEOF
 
 # Generate signing key on first boot
