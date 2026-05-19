@@ -224,8 +224,9 @@ except Exception as e:
 PYEOF
 else
     TOKEN=$(cat "$BOT_TOKEN_FILE")
+    TOKEN_PREFIX=$(printf '%s' "$TOKEN" | cut -c1-20)
     echo "[entrypoint] ============================================"
-    echo "[entrypoint] kolbot token already exists: ${TOKEN:0:20}..."
+    echo "[entrypoint] kolbot token already exists: ${TOKEN_PREFIX}..."
     echo "[entrypoint] MATRIX_ACCESS_TOKEN=$(cat $BOT_TOKEN_FILE)"
     echo "[entrypoint] ============================================"
 fi
