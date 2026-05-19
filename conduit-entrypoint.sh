@@ -48,7 +48,7 @@ if changed:
         for k, v in config_secrets.items():
             f.write(f'{k}={v}\n')
 
-# Database config: PostgreSQL if DATABASE_URL is set, else SQLite
+# Database config
 db_url = os.environ.get('DATABASE_URL', '')
 if db_url:
     u = urllib.parse.urlparse(db_url)
@@ -124,8 +124,8 @@ suppress_key_server_warning: true
 app_service_config_files:
   - /data/meta-registration.yaml
 
-allow_registration: true
-enable_registration_without_verification: true
+allow_registration: false
+enable_registration_without_verification: false
 """
 
 with open('/data/homeserver.yaml', 'w') as f:
@@ -143,6 +143,65 @@ if [ ! -f "$SIGNING_KEY" ]; then
         --generate-keys
 fi
 
-echo "[entrypoint] Starting Synapse on port 6167..."
-exec python3 -m synapse.app.homeserver \
-    --config-path "/data/homeserver.yaml"
+echo "[entrypoint] Starting Synapse in background to create bot user..."
+python3 -m synapse.app.homeserver --config-path "/data/homeserver.yaml" &
+SYNAPSE_PID=$!
+
+# Wait for Synapse to be ready
+echo "[entrypoint] Waiting for Synapse to accept connections..."
+for i in $(seq 1 30); do
+    if python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:6167/_matrix/client/versions')" 2>/dev/null; then
+        echo "[entrypoint] Synapse is ready"
+        break
+    fi
+    sleep 2
+done
+
+# Create kolbot admin user if not exists, print access token
+BOT_TOKEN_FILE="$DATA/.kolbot_token"
+if [ ! -f "$BOT_TOKEN_FILE" ]; then
+    echo "[entrypoint] Creating kolbot admin user..."
+    register_new_matrix_user \
+        -c "$DATA/homeserver.yaml" \
+        -u kolbot \
+        -p "KolBot2026!Matrix" \
+        --admin \
+        http://localhost:6167 2>&1 || echo "[entrypoint] Note: user may already exist"
+
+    # Login to get access token
+    python3 << 'PYEOF'
+import urllib.request, json, os
+
+data = json.dumps({
+    "type": "m.login.password",
+    "user": "kolbot",
+    "password": "KolBot2026!Matrix"
+}).encode()
+req = urllib.request.Request(
+    "http://localhost:6167/_matrix/client/v3/login",
+    data=data,
+    headers={"Content-Type": "application/json"}
+)
+try:
+    resp = json.loads(urllib.request.urlopen(req).read())
+    token = resp.get("access_token", "")
+    user_id = resp.get("user_id", "")
+    with open("/data/.kolbot_token", "w") as f:
+        f.write(token)
+    print(f"[entrypoint] ============================================")
+    print(f"[entrypoint] KOLBOT USER ID:    {user_id}")
+    print(f"[entrypoint] MATRIX_ACCESS_TOKEN={token}")
+    print(f"[entrypoint] ============================================")
+except Exception as e:
+    print(f"[entrypoint] Login failed: {e}")
+PYEOF
+else
+    TOKEN=$(cat "$BOT_TOKEN_FILE")
+    echo "[entrypoint] ============================================"
+    echo "[entrypoint] kolbot token already exists: ${TOKEN:0:20}..."
+    echo "[entrypoint] MATRIX_ACCESS_TOKEN=$(cat $BOT_TOKEN_FILE)"
+    echo "[entrypoint] ============================================"
+fi
+
+echo "[entrypoint] Bringing Synapse to foreground..."
+wait $SYNAPSE_PID
