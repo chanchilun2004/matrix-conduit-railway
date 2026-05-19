@@ -25,7 +25,7 @@ KOL_APP_REGISTRATION=""
 if [ -n "$KOL_APP_URL" ] && [ -n "$KOL_AS_TOKEN" ] && [ -n "$KOL_HS_TOKEN" ]; then
     cat > "$DATA/kol-registration.yaml" << YAML
 id: kolagent
-url: ${KOL_APP_URL}/api/matrix/webhook
+url: ${KOL_APP_URL}
 as_token: ${KOL_AS_TOKEN}
 hs_token: ${KOL_HS_TOKEN}
 sender_localpart: kolagent
