@@ -37,7 +37,9 @@ namespaces:
   aliases:
     - exclusive: false
       regex: "#ig_.+:.*"
-  rooms: []
+  rooms:
+    - exclusive: false
+      regex: "!.+:.*"
 YAML
     KOL_APP_REGISTRATION="  - /data/kol-registration.yaml"
     echo "[entrypoint] KOL Agent appservice registration written"
