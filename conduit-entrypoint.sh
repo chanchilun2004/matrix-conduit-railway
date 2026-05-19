@@ -3,15 +3,17 @@ set -e
 
 /bin/mkdir -p /var/lib/matrix-conduit
 
-# Write registration file
 if [ -n "$META_REGISTRATION_B64" ]; then
-  /bin/echo "$META_REGISTRATION_B64" | /bin/base64 -d > /var/lib/matrix-conduit/meta-registration.yaml
+  CLEAN_B64=$(echo "$META_REGISTRATION_B64" | tr -d ' \n\r\t')
+  echo "$CLEAN_B64" | /bin/base64 -d > /var/lib/matrix-conduit/meta-registration.yaml
+  echo "[entrypoint] Registration file written:"
+  /bin/cat /var/lib/matrix-conduit/meta-registration.yaml
   APPSERVICE_LINE='appservice_config_files = ["/var/lib/matrix-conduit/meta-registration.yaml"]'
 else
+  echo "[entrypoint] WARNING: META_REGISTRATION_B64 not set"
   APPSERVICE_LINE='appservice_config_files = []'
 fi
 
-# Generate conduit.toml from env vars
 cat > /var/lib/matrix-conduit/conduit.toml << TOML
 [global]
 server_name = "${CONDUIT_SERVER_NAME}"
@@ -28,6 +30,9 @@ trusted_servers = ${CONDUIT_TRUSTED_SERVERS:-["matrix.org"]}
 $APPSERVICE_LINE
 TOML
 
+echo "[entrypoint] conduit.toml written:"
+/bin/cat /var/lib/matrix-conduit/conduit.toml
+
 export CONDUIT_CONFIG=/var/lib/matrix-conduit/conduit.toml
-echo "[entrypoint] Config written, starting conduit..."
+echo "[entrypoint] Starting conduit..."
 exec /bin/conduit "$@"
