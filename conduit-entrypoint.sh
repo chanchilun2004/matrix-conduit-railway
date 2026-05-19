@@ -31,9 +31,7 @@ hs_token: ${KOL_HS_TOKEN}
 sender_localpart: kolagent
 rate_limited: false
 namespaces:
-  users:
-    - exclusive: false
-      regex: "@meta_.+:.*"
+  users: []
   aliases:
     - exclusive: false
       regex: "#ig_.+:.*"
