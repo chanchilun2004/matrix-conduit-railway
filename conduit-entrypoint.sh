@@ -1,46 +1,15 @@
-#!/bin/sh
-set -e
+FROM busybox:musl AS busybox
+FROM ghcr.io/girlbossceo/conduwuit:main
 
-/bin/mkdir -p /var/lib/matrix-conduit
+COPY --from=busybox /bin/busybox /busybox
+RUN ["/busybox", "sh", "-c", "\
+  /busybox mkdir -p /bin && \
+  for cmd in sh mkdir base64 echo find head cat tr grep; do \
+    /busybox ln -sf /busybox /bin/$cmd; \
+  done && \
+  CONDUWUIT_BIN=$(/busybox find /usr /bin /opt /nix -name conduwuit -type f 2>/dev/null | /busybox head -1) && \
+  /busybox echo \"Found conduwuit at: $CONDUWUIT_BIN\" && \
+  /busybox ln -sf \"$CONDUWUIT_BIN\" /bin/conduwuit"]
 
-cat > /var/lib/matrix-conduit/meta-registration.yaml << YAML
-id: meta
-url: ${MAUTRIX_PUBLIC_URL}
-as_token: ${MAUTRIX_AS_TOKEN}
-hs_token: ${MAUTRIX_HS_TOKEN}
-sender_localpart: metabot
-rate_limited: false
-namespaces:
-  users:
-    - exclusive: true
-      regex: "@meta_.+:.*"
-  aliases: []
-  rooms: []
-YAML
-
-echo "[entrypoint] Registration written:"
-/bin/cat /var/lib/matrix-conduit/meta-registration.yaml
-
-cat > /var/lib/matrix-conduit/conduit.toml << TOML
-[global]
-server_name = "${CONDUIT_SERVER_NAME}"
-database_backend = "${CONDUIT_DATABASE_BACKEND:-rocksdb}"
-database_path = "${CONDUIT_DATABASE_PATH:-/var/lib/matrix-conduit/}"
-address = "${CONDUIT_ADDRESS:-0.0.0.0}"
-port = ${CONDUIT_PORT:-6167}
-max_request_size = ${CONDUIT_MAX_REQUEST_SIZE:-20000000}
-max_concurrent_requests = ${CONDUIT_MAX_CONCURRENT_REQUESTS:-100}
-allow_registration = ${CONDUIT_ALLOW_REGISTRATION:-true}
-allow_federation = ${CONDUIT_ALLOW_FEDERATION:-true}
-allow_check_for_updates = ${CONDUIT_ALLOW_CHECK_FOR_UPDATES:-false}
-trusted_servers = ${CONDUIT_TRUSTED_SERVERS:-["matrix.org"]}
-appservice_config_files = ["/var/lib/matrix-conduit/meta-registration.yaml"]
-TOML
-
-echo "[entrypoint] conduit.toml written:"
-/bin/cat /var/lib/matrix-conduit/conduit.toml
-
-unset CONDUIT_CONFIG
-export CONDUIT_CONFIG=/var/lib/matrix-conduit/conduit.toml
-echo "[entrypoint] Starting conduit (CONDUIT_CONFIG=${CONDUIT_CONFIG})..."
-exec /bin/conduit "$@"
+COPY --chmod=755 conduit-entrypoint.sh /conduit-entrypoint.sh
+ENTRYPOINT ["/bin/sh", "/conduit-entrypoint.sh"]
