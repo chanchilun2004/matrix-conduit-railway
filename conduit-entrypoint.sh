@@ -7,4 +7,4 @@ if [ -n "$META_REGISTRATION_B64" ]; then
   export CONDUIT_APPSERVICE_CONFIG_FILES=/var/lib/matrix-conduit/meta-registration.yaml
 fi
 
-exec /usr/local/bin/conduit "$@"
+exec /srv/conduit "$@"
