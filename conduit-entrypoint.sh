@@ -3,16 +3,23 @@ set -e
 
 /bin/mkdir -p /var/lib/matrix-conduit
 
-if [ -n "$META_REGISTRATION_B64" ]; then
-  CLEAN_B64=$(echo "$META_REGISTRATION_B64" | tr -d ' \n\r\t')
-  echo "$CLEAN_B64" | /bin/base64 -d > /var/lib/matrix-conduit/meta-registration.yaml
-  echo "[entrypoint] Registration file written:"
-  /bin/cat /var/lib/matrix-conduit/meta-registration.yaml
-  APPSERVICE_LINE='appservice_config_files = ["/var/lib/matrix-conduit/meta-registration.yaml"]'
-else
-  echo "[entrypoint] WARNING: META_REGISTRATION_B64 not set"
-  APPSERVICE_LINE='appservice_config_files = []'
-fi
+cat > /var/lib/matrix-conduit/meta-registration.yaml << YAML
+id: meta
+url: ${MAUTRIX_PUBLIC_URL}
+as_token: ${MAUTRIX_AS_TOKEN}
+hs_token: ${MAUTRIX_HS_TOKEN}
+sender_localpart: metabot
+rate_limited: false
+namespaces:
+  users:
+    - exclusive: true
+      regex: '@meta_.+:.*'
+  aliases: []
+  rooms: []
+YAML
+
+echo "[entrypoint] Registration written:"
+/bin/cat /var/lib/matrix-conduit/meta-registration.yaml
 
 cat > /var/lib/matrix-conduit/conduit.toml << TOML
 [global]
@@ -27,11 +34,8 @@ allow_registration = ${CONDUIT_ALLOW_REGISTRATION:-true}
 allow_federation = ${CONDUIT_ALLOW_FEDERATION:-true}
 allow_check_for_updates = ${CONDUIT_ALLOW_CHECK_FOR_UPDATES:-false}
 trusted_servers = ${CONDUIT_TRUSTED_SERVERS:-["matrix.org"]}
-$APPSERVICE_LINE
+appservice_config_files = ["/var/lib/matrix-conduit/meta-registration.yaml"]
 TOML
-
-echo "[entrypoint] conduit.toml written:"
-/bin/cat /var/lib/matrix-conduit/conduit.toml
 
 export CONDUIT_CONFIG=/var/lib/matrix-conduit/conduit.toml
 echo "[entrypoint] Starting conduit..."
