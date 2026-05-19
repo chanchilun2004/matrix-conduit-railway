@@ -1,6 +1,6 @@
+FROM busybox:musl AS busybox
+
 FROM matrixconduit/matrix-conduit:latest
-
-COPY conduit-entrypoint.sh /conduit-entrypoint.sh
-RUN chmod +x /conduit-entrypoint.sh
-
-ENTRYPOINT ["/conduit-entrypoint.sh"]
+COPY --from=busybox /bin/busybox /busybox
+COPY --chmod=755 conduit-entrypoint.sh /conduit-entrypoint.sh
+ENTRYPOINT ["/busybox", "sh", "/conduit-entrypoint.sh"]
