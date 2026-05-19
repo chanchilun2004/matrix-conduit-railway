@@ -4,7 +4,7 @@ set -e
 DATA=/data
 mkdir -p "$DATA/media_store"
 
-# Write appservice registration
+# Write mautrix-meta appservice registration
 cat > "$DATA/meta-registration.yaml" << YAML
 id: meta
 url: ${MAUTRIX_PUBLIC_URL}
@@ -20,6 +20,29 @@ namespaces:
   rooms: []
 YAML
 
+# Write KOL Agent Tool appservice registration (optional — only if env vars set)
+KOL_APP_REGISTRATION=""
+if [ -n "$KOL_APP_URL" ] && [ -n "$KOL_AS_TOKEN" ] && [ -n "$KOL_HS_TOKEN" ]; then
+    cat > "$DATA/kol-registration.yaml" << YAML
+id: kolagent
+url: ${KOL_APP_URL}/api/matrix/webhook
+as_token: ${KOL_AS_TOKEN}
+hs_token: ${KOL_HS_TOKEN}
+sender_localpart: kolagent
+rate_limited: false
+namespaces:
+  users:
+    - exclusive: false
+      regex: "@meta_.+:.*"
+  aliases:
+    - exclusive: false
+      regex: "#ig_.+:.*"
+  rooms: []
+YAML
+    KOL_APP_REGISTRATION="  - /data/kol-registration.yaml"
+    echo "[entrypoint] KOL Agent appservice registration written"
+fi
+
 echo "[entrypoint] Registration written"
 
 # Generate homeserver.yaml using Python
@@ -27,6 +50,9 @@ python3 << 'PYEOF'
 import os, secrets, urllib.parse
 
 server_name = os.environ['CONDUIT_SERVER_NAME']
+kol_reg_line = "  - /data/kol-registration.yaml" if (
+    os.environ.get('KOL_APP_URL') and os.environ.get('KOL_AS_TOKEN') and os.environ.get('KOL_HS_TOKEN')
+) else ""
 
 # Load or generate stable secrets
 secrets_file = '/data/.secrets'
@@ -123,6 +149,7 @@ suppress_key_server_warning: true
 
 app_service_config_files:
   - /data/meta-registration.yaml
+{kol_reg_line}
 
 allow_registration: false
 enable_registration_without_verification: false
