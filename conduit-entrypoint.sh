@@ -7,6 +7,4 @@ if [ -n "$META_REGISTRATION_B64" ]; then
   export CONDUIT_APPSERVICE_CONFIG_FILES=/var/lib/matrix-conduit/meta-registration.yaml
 fi
 
-echo "=== /nix/store ==="
-/busybox ls /nix/store/ 2>/dev/null | /busybox grep conduit
-exit 1
+exec /nix/store/kmxkixnvfgwlymj8d2r3h093wlklxc6v-conduit-0.10.12/bin/conduit "$@"
