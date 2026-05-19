@@ -1,5 +1,5 @@
 FROM busybox:musl AS busybox
-FROM ghcr.io/girlbossceo/conduwuit:main
+FROM docker.io/girlbossceo/conduwuit:latest
 
 COPY --from=busybox /bin/busybox /busybox
 RUN ["/busybox", "sh", "-c", "\
