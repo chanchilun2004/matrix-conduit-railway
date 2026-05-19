@@ -13,7 +13,7 @@ rate_limited: false
 namespaces:
   users:
     - exclusive: true
-      regex: '@meta_.+:.*'
+      regex: "@meta_.+:.*"
   aliases: []
   rooms: []
 YAML
@@ -37,6 +37,10 @@ trusted_servers = ${CONDUIT_TRUSTED_SERVERS:-["matrix.org"]}
 appservice_config_files = ["/var/lib/matrix-conduit/meta-registration.yaml"]
 TOML
 
+echo "[entrypoint] conduit.toml written:"
+/bin/cat /var/lib/matrix-conduit/conduit.toml
+
+unset CONDUIT_CONFIG
 export CONDUIT_CONFIG=/var/lib/matrix-conduit/conduit.toml
-echo "[entrypoint] Starting conduit..."
+echo "[entrypoint] Starting conduit (CONDUIT_CONFIG=${CONDUIT_CONFIG})..."
 exec /bin/conduit "$@"
